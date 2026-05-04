@@ -1,0 +1,10 @@
+data/raw/
+data/processed/
+chroma_db/
+__pycache__/
+.env
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
