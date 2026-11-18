@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 BENGALI_RE = re.compile(r"[\u0980-\u09FF]")
 URL_RE = re.compile(r"(https?://\S+|www\.\S+)", re.IGNORECASE)

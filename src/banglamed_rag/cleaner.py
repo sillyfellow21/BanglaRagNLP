@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 from langdetect import DetectorFactory, detect
 
@@ -99,6 +99,7 @@ def clean_corpus(
                     "source_id": record.get("id", ""),
                     "title": record.get("title", ""),
                     "url": record.get("url", ""),
+                    "source": record.get("source", ""),
                     "text": chunk,
                     "chunk_index": str(idx),
                 }

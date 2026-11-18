@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
+
+try:
+    from newspaper import Article
+except Exception:  # pragma: no cover
+    Article = None
 
 from .config import settings
 from .utils import ensure_dir, normalize_whitespace, slugify, write_jsonl
@@ -41,6 +47,63 @@ FALLBACK_URLS = [
 ]
 
 
+def fetch_page_html(url: str, session: requests.Session) -> str:
+    if not url:
+        return ""
+    try:
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException:
+        return ""
+
+
+def extract_text_from_html(url: str, html: str) -> tuple[str, str]:
+    title = ""
+    text = ""
+    if Article is not None and html:
+        article = Article(url=url, language="bn")
+        article.set_html(html)
+        article.parse()
+        text = article.text or ""
+        title = article.title or ""
+    if html:
+        soup = BeautifulSoup(html, "html.parser")
+        title_el = soup.find("h1")
+        if not title:
+            title = title_el.get_text(strip=True) if title_el else ""
+        if not text:
+            content = soup.select_one("#mw-content-text")
+            text = content.get_text(separator=" ") if content else soup.get_text(" ")
+    return normalize_whitespace(text), title
+
+
+def save_raw_html(documents: list[dict[str, Any]], raw_dir: Path | None = None) -> None:
+    raw_dir = raw_dir or settings.raw_dir
+    ensure_dir(raw_dir)
+    for doc in documents:
+        html = doc.get("html", "")
+        if not html:
+            continue
+        raw_path = raw_dir / f"{doc['id']}.html"
+        raw_path.write_text(html, encoding="utf-8")
+
+
+def prepare_corpus_records(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for doc in documents:
+        records.append(
+            {
+                "id": doc.get("id", ""),
+                "title": doc.get("title", ""),
+                "text": doc.get("text", ""),
+                "url": doc.get("url", ""),
+                "source": doc.get("source", ""),
+            }
+        )
+    return records
+
+
 def fetch_category_titles(category: str, max_pages: int) -> list[str]:
     titles: list[str] = []
     params: dict[str, Any] = {
@@ -68,7 +131,7 @@ def fetch_category_titles(category: str, max_pages: int) -> list[str]:
     return titles[:max_pages]
 
 
-def fetch_page_extract(title: str) -> dict[str, Any] | None:
+def fetch_page_extract(title: str, session: requests.Session) -> dict[str, Any] | None:
     params = {
         "action": "query",
         "prop": "extracts|info",
@@ -77,17 +140,21 @@ def fetch_page_extract(title: str) -> dict[str, Any] | None:
         "titles": title,
         "format": "json",
     }
-    response = requests.get(WIKI_API, params=params, timeout=30)
+    response = session.get(WIKI_API, params=params, timeout=30)
     response.raise_for_status()
     pages = response.json().get("query", {}).get("pages", {})
     page = next(iter(pages.values()), None)
     if not page or "extract" not in page:
         return None
+    url = page.get("fullurl", "")
+    html = fetch_page_html(url, session)
     return {
         "id": slugify(title),
         "title": page.get("title", title),
-        "url": page.get("fullurl", ""),
+        "url": url,
         "text": normalize_whitespace(page.get("extract", "")),
+        "html": html,
+        "source": "wikipedia",
     }
 
 
@@ -99,9 +166,11 @@ def scrape_wikipedia(max_pages: int = 500) -> list[dict[str, Any]]:
             break
     unique_titles = list(dict.fromkeys(titles))[:max_pages]
     documents: list[dict[str, Any]] = []
+    session = requests.Session()
+    session.headers.update({"User-Agent": settings.user_agent})
     for title in unique_titles:
         try:
-            doc = fetch_page_extract(title)
+            doc = fetch_page_extract(title, session)
         except requests.RequestException:
             continue
         if doc and doc.get("text"):
@@ -119,27 +188,21 @@ def scrape_fallback_urls() -> list[dict[str, Any]]:
             response.raise_for_status()
         except requests.RequestException:
             continue
-        soup = BeautifulSoup(response.text, "html.parser")
-        title = soup.find("h1")
-        title_text = title.get_text(strip=True) if title else url.rsplit("/", 1)[-1]
-        content = soup.select_one("#mw-content-text")
-        text = content.get_text(separator=" ") if content else soup.get_text(" ")
+        html = response.text
+        text, title_text = extract_text_from_html(url, html)
+        if not title_text:
+            title_text = url.rsplit("/", 1)[-1]
         documents.append(
             {
                 "id": slugify(title_text),
                 "title": title_text,
                 "url": url,
-                "text": normalize_whitespace(text),
+                "text": text,
+                "html": html,
+                "source": "fallback",
             }
         )
     return documents
-
-
-def save_raw_documents(documents: list[dict[str, Any]]) -> None:
-    ensure_dir(settings.raw_dir)
-    for doc in documents:
-        raw_path = settings.raw_dir / f"{doc['id']}.txt"
-        raw_path.write_text(doc.get("text", ""), encoding="utf-8")
 
 
 def run_scraper(max_pages: int = 500, min_docs: int = 25) -> list[dict[str, Any]]:
@@ -151,8 +214,8 @@ def run_scraper(max_pages: int = 500, min_docs: int = 25) -> list[dict[str, Any]
         documents = []
     if len(documents) < min_docs:
         documents = scrape_fallback_urls()
-    save_raw_documents(documents)
-    write_jsonl(settings.corpus_path, documents)
+    save_raw_html(documents)
+    write_jsonl(settings.corpus_path, prepare_corpus_records(documents))
     return documents
 
 

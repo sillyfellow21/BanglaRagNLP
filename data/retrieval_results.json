@@ -1,0 +1,23 @@
+{
+  "benchmark_size": 50,
+  "retrievers": {
+    "bm25": {
+      "hit@1": 0.5,
+      "hit@3": 0.7,
+      "hit@5": 0.8,
+      "mrr": 0.6306
+    },
+    "sagorsarker/bangla-bert-base": {
+      "hit@1": 0.46,
+      "hit@3": 0.64,
+      "hit@5": 0.68,
+      "mrr": 0.5677
+    },
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
+      "hit@1": 0.18,
+      "hit@3": 0.36,
+      "hit@5": 0.42,
+      "mrr": 0.3212
+    }
+  }
+}

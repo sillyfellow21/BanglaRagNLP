@@ -5,6 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _resolve_env_path(name: str, default: Path, root: Path) -> Path:
+    raw = os.getenv(name, str(default))
+    path = Path(raw)
+    return path if path.is_absolute() else root / path
+
+
 @dataclass(frozen=True)
 class Settings:
     project_root: Path = Path(__file__).resolve().parents[2]
@@ -15,11 +21,16 @@ class Settings:
     cleaned_corpus_path: Path = processed_dir / "corpus_clean.jsonl"
     qa_benchmark_path: Path = data_dir / "qa_benchmark.json"
     evaluation_results_path: Path = data_dir / "evaluation_results.json"
-    chroma_path: Path = project_root / "chroma_db"
+    chroma_path: Path = _resolve_env_path(
+        "CHROMA_PERSIST_DIR", project_root / "chroma_db", project_root
+    )
     collection_name: str = "banglamed_rag"
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "phi3")
-    embed_model: str = os.getenv("EMBED_MODEL", "sagorsarker/bangla-bert-base")
+    embed_model: str = os.getenv(
+        "EMBEDDING_MODEL",
+        os.getenv("EMBED_MODEL", "sagorsarker/bangla-bert-base"),
+    )
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "512"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "50"))
     default_top_k: int = int(os.getenv("TOP_K", "5"))

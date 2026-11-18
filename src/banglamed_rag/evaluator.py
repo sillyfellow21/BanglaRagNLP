@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.llms import Ollama
 from ragas import evaluate
 from ragas.embeddings import LangchainEmbeddings
 from ragas.llms import LangchainLLM
 from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
-
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from .config import settings
 from .rag_chain import BanglaMedRAG
@@ -33,8 +32,7 @@ def run_evaluation(top_k: int | None = None) -> dict[str, Any]:
     for item in qa_data:
         question = item["question"]
         ground_truth = item["ground_truth"]
-        retrieval = rag._retrieve(question, top_k or settings.default_top_k)
-        docs = rag._to_documents(retrieval)
+        docs = rag._retrieve(question, top_k or settings.default_top_k)
         response = rag.ask(question, top_k=top_k)
         contexts = [doc.page_content for doc in docs]
         samples.append(
@@ -46,9 +44,7 @@ def run_evaluation(top_k: int | None = None) -> dict[str, Any]:
             }
         )
     dataset = build_dataset(samples)
-    llm = LangchainLLM(
-        ChatOllama(model=settings.ollama_model, base_url=settings.ollama_base_url)
-    )
+    llm = LangchainLLM(Ollama(model=settings.ollama_model, base_url=settings.ollama_base_url))
     embeddings = LangchainEmbeddings(HuggingFaceEmbeddings(model_name=settings.embed_model))
     result = evaluate(
         dataset,

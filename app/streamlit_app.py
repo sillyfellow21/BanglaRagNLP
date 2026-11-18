@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import streamlit as st
-from langchain_community.chat_models import ChatOllama
+from langchain_community.llms import Ollama
 
 from banglamed_rag.config import settings
 from banglamed_rag.rag_chain import BanglaMedRAG
 
 st.set_page_config(page_title="বাংলা মেড-রাগ", page_icon="🩺", layout="wide")
 
-st.title("বাংলা মেড-রাগ")
+st.markdown(
+    """
+    <style>
+    html, body, [class*="css"] {
+        font-family: "Noto Sans Bengali", "Nirmala UI", "SolaimanLipi", sans-serif;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("বাংলা মেড-রাগ: বাংলা ভাষায় চিকিৎসা প্রশ্নোত্তর")
 st.write("বাংলা ভাষায় স্বাস্থ্য সংক্রান্ত প্রশ্নের জন্য স্থানীয় রাগ সিস্টেম।")
 
 sample_questions = [
@@ -31,7 +42,7 @@ question = st.text_input("আপনার প্রশ্ন লিখুন", v
 
 @st.cache_resource
 def load_rag(model: str, temp: float) -> BanglaMedRAG:
-    llm = ChatOllama(model=model, base_url=settings.ollama_base_url, temperature=temp)
+    llm = Ollama(model=model, base_url=settings.ollama_base_url, temperature=temp)
     return BanglaMedRAG(llm=llm)
 
 

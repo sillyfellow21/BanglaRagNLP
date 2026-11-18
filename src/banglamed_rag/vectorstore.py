@@ -1,28 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import chromadb
+from langchain_core.documents import Document
 
 from .config import settings
 from .embedder import BanglaEmbedder
 from .utils import read_jsonl
 
 
-@dataclass
-class QueryResult:
-    ids: list[list[str]]
-    documents: list[list[str]]
-    metadatas: list[list[dict[str, Any]]]
-    distances: list[list[float]]
-
-
 class ChromaVectorStore:
     def __init__(
         self,
-        embedder: BanglaEmbedder,
+        embedder: BanglaEmbedder | None = None,
         persist_path: str | None = None,
         collection_name: str | None = None,
     ) -> None:
@@ -32,40 +24,39 @@ class ChromaVectorStore:
         self.client = chromadb.PersistentClient(path=self.persist_path)
         self.collection = self.client.get_or_create_collection(self.collection_name)
 
-    def create_collection(self, reset: bool = False) -> None:
+    def create_collection(self, name: str | None = None, reset: bool = False) -> None:
+        if name:
+            self.collection_name = name
         if reset:
-            self.client.delete_collection(self.collection_name)
+            try:
+                self.client.delete_collection(self.collection_name)
+            except Exception:
+                pass
         self.collection = self.client.get_or_create_collection(self.collection_name)
 
-    def add_documents(self, records: list[dict[str, Any]]) -> None:
-        if not records:
+    def add_documents(
+        self,
+        ids: list[str],
+        texts: list[str],
+        embeddings: list[list[float]],
+        metadatas: list[dict[str, Any]],
+    ) -> None:
+        if not ids:
             return
-        ids = [record.get("id") for record in records]
-        documents = [record.get("text", "") for record in records]
-        metadatas = [
-            {
-                "title": record.get("title", ""),
-                "url": record.get("url", ""),
-                "source_id": record.get("source_id", ""),
-            }
-            for record in records
-        ]
-        embeddings = self.embedder.embed_documents(documents)
-        self.collection.add(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
+        self.collection.add(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
 
-    def query(self, query_text: str, n_results: int = 5) -> QueryResult:
-        embedding = self.embedder.embed_query(query_text)
+    def query(self, query_embedding: list[float], n_results: int = 5) -> list[Document]:
         results = self.collection.query(
-            query_embeddings=[embedding],
+            query_embeddings=[query_embedding],
             n_results=n_results,
             include=["documents", "metadatas", "distances"],
         )
-        return QueryResult(
-            ids=results.get("ids", []),
-            documents=results.get("documents", []),
-            metadatas=results.get("metadatas", []),
-            distances=results.get("distances", []),
-        )
+        documents: list[Document] = []
+        docs = results.get("documents", [[]])[0]
+        metas = results.get("metadatas", [[]])[0]
+        for doc, meta in zip(docs, metas, strict=True):
+            documents.append(Document(page_content=doc, metadata=meta or {}))
+        return documents
 
 
 def build_vectorstore(
@@ -78,7 +69,20 @@ def build_vectorstore(
     embedder = BanglaEmbedder()
     store = ChromaVectorStore(embedder, persist_path=persist_path)
     store.create_collection(reset=reset)
-    store.add_documents(records)
+    ids = [record.get("id", "") for record in records]
+    texts = [record.get("text", "") for record in records]
+    metadatas = [
+        {
+            "title": record.get("title", ""),
+            "url": record.get("url", ""),
+            "source_id": record.get("source_id", ""),
+            "source": record.get("source", ""),
+            "chunk_index": record.get("chunk_index", ""),
+        }
+        for record in records
+    ]
+    embeddings = embedder.embed_documents(texts)
+    store.add_documents(ids=ids, texts=texts, embeddings=embeddings, metadatas=metadatas)
     return store
 
 
